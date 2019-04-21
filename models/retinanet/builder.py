@@ -372,129 +372,6 @@ class MSRAResNet101V1FPN(Backbone):
         return self.symbol
 
 
-class RetinaNetNeckWithBN(RetinaNetNeck):
-    def __init__(self, pNeck):
-        super(RetinaNetNeckWithBN, self).__init__(pNeck)
-        self.norm = pNeck.normalizer
-    
-    def get_retinanet_neck(data):
-        c2, c3, c4, c5 = data
-
-        import mxnet as mx
-        xavier_init = mx.init.Xavier(factor_type="in", rnd_type="uniform", magnitude=3)
-        # P5
-        p5 = X.conv(
-            data=c5,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P5_lateral_weight", init=xavier_init),
-            bias=X.var(name="P5_lateral_bias", init=X.zero_init()),
-            name="P5_lateral"
-        )
-        p5 = self.norm(data=p5, name="P5_lateral_bn")
-        p5_conv = X.conv(
-            data=p5,
-            kernel=3,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P5_conv_weight", init=xavier_init),
-            bias=X.var(name="P5_conv_bias", init=X.zero_init()),
-            name="P5_conv"
-        )
-        p5_conv = self.norm(data=p5_conv, name="P5_conv_bn")
-
-        # P4
-        p5_up = mx.sym.UpSampling(
-            p5,
-            scale=2,
-            sample_type="nearest",
-            name="P5_upsampling",
-            num_args=1
-        )
-        p4_la = X.conv(
-            data=c4,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P4_lateral_weight", init=xavier_init),
-            bias=X.var(name="P4_lateral_bias", init=X.zero_init()),
-            name="P4_lateral"
-        )
-        p4_la = self.norm(data=p4_la, name="P4_lateral_bn")
-        p5_clip = mx.sym.Crop(*[p5_up, p4_la], name="P4_clip")
-        p4 = mx.sym.ElementWiseSum(*[p5_clip, p4_la], name="P4_sum")
-
-        p4_conv = X.conv(
-            data=p4,
-            kernel=3,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P4_conv_weight", init=xavier_init),
-            bias=X.var(name="P4_conv_bias", init=X.zero_init()),
-            name="P4_conv"
-        )
-        p4_conv = self.norm(data=p4_conv, name="P4_conv_bn")
-
-        # P3
-        p4_up = mx.sym.UpSampling(
-            p4,
-            scale=2,
-            sample_type="nearest",
-            name="P4_upsampling",
-            num_args=1
-        )
-        p3_la = X.conv(
-            data=c3,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P3_lateral_weight", init=xavier_init),
-            bias=X.var(name="P3_lateral_bias", init=X.zero_init()),
-            name="P3_lateral"
-        )
-        p3_la = self.norm(data=p3_la, name="P3_lateral_bn")
-        p4_clip = mx.sym.Crop(*[p4_up, p3_la], name="P3_clip")
-        p3 = mx.sym.ElementWiseSum(*[p4_clip, p3_la], name="P3_sum")
-
-        p3_conv = X.conv(
-            data=p3,
-            kernel=3,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P3_conv_weight", init=xavier_init),
-            bias=X.var(name="P3_conv_bias", init=X.zero_init()),
-            name="P3_conv"
-        )
-        p3_conv = self.norm(data=p3_conv, name="P3_conv_bn")
-
-        # P6
-        P6 = X.conv(
-            data=c5,
-            kernel=3,
-            stride=2,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P6_conv_weight", init=xavier_init),
-            bias=X.var(name="P6_conv_bias", init=X.zero_init()),
-            name="P6_conv"
-        )
-        P6 = self.norm(data=P6, name="P6_conv_bn")
-
-        # P7
-        P6_relu = X.relu(data=P6, name="P6_relu")
-        P7 = X.conv(
-            data=P6_relu,
-            kernel=3,
-            stride=2,
-            filter=256,
-            no_bias=False,
-            weight=X.var(name="P7_conv_weight", init=xavier_init),
-            bias=X.var(name="P7_conv_bias", init=X.zero_init()),
-            name="P7_conv"
-        )
-        P7 = self.norm(data=P7, name="P7_conv_bn")
-
-        return p3_conv, p4_conv, p5_conv, P6, P7
-
-
 class RetinaNetNeck(Neck):
     def __init__(self, pNeck):
         super(RetinaNetNeck, self).__init__(pNeck)
@@ -614,3 +491,126 @@ class RetinaNetNeck(Neck):
 
     def get_rcnn_feature(self, rcnn_feat):
         return self.get_retinanet_neck(rcnn_feat)
+
+
+class RetinaNetNeckWithBN(RetinaNetNeck):
+    def __init__(self, pNeck):
+        super(RetinaNetNeckWithBN, self).__init__(pNeck)
+        self.norm = pNeck.normalizer
+    
+    def get_retinanet_neck(self, data):
+        c2, c3, c4, c5 = data
+
+        import mxnet as mx
+        xavier_init = mx.init.Xavier(factor_type="in", rnd_type="uniform", magnitude=3)
+        # P5
+        p5 = X.conv(
+            data=c5,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P5_lateral_weight", init=xavier_init),
+            bias=X.var(name="P5_lateral_bias", init=X.zero_init()),
+            name="P5_lateral"
+        )
+        p5 = self.norm(data=p5, name="P5_lateral_bn")
+        p5_conv = X.conv(
+            data=p5,
+            kernel=3,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P5_conv_weight", init=xavier_init),
+            bias=X.var(name="P5_conv_bias", init=X.zero_init()),
+            name="P5_conv"
+        )
+        p5_conv = self.norm(data=p5_conv, name="P5_conv_bn")
+
+        # P4
+        p5_up = mx.sym.UpSampling(
+            p5,
+            scale=2,
+            sample_type="nearest",
+            name="P5_upsampling",
+            num_args=1
+        )
+        p4_la = X.conv(
+            data=c4,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P4_lateral_weight", init=xavier_init),
+            bias=X.var(name="P4_lateral_bias", init=X.zero_init()),
+            name="P4_lateral"
+        )
+        p4_la = self.norm(data=p4_la, name="P4_lateral_bn")
+        p5_clip = mx.sym.Crop(*[p5_up, p4_la], name="P4_clip")
+        p4 = mx.sym.ElementWiseSum(*[p5_clip, p4_la], name="P4_sum")
+
+        p4_conv = X.conv(
+            data=p4,
+            kernel=3,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P4_conv_weight", init=xavier_init),
+            bias=X.var(name="P4_conv_bias", init=X.zero_init()),
+            name="P4_conv"
+        )
+        p4_conv = self.norm(data=p4_conv, name="P4_conv_bn")
+
+        # P3
+        p4_up = mx.sym.UpSampling(
+            p4,
+            scale=2,
+            sample_type="nearest",
+            name="P4_upsampling",
+            num_args=1
+        )
+        p3_la = X.conv(
+            data=c3,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P3_lateral_weight", init=xavier_init),
+            bias=X.var(name="P3_lateral_bias", init=X.zero_init()),
+            name="P3_lateral"
+        )
+        p3_la = self.norm(data=p3_la, name="P3_lateral_bn")
+        p4_clip = mx.sym.Crop(*[p4_up, p3_la], name="P3_clip")
+        p3 = mx.sym.ElementWiseSum(*[p4_clip, p3_la], name="P3_sum")
+
+        p3_conv = X.conv(
+            data=p3,
+            kernel=3,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P3_conv_weight", init=xavier_init),
+            bias=X.var(name="P3_conv_bias", init=X.zero_init()),
+            name="P3_conv"
+        )
+        p3_conv = self.norm(data=p3_conv, name="P3_conv_bn")
+
+        # P6
+        P6 = X.conv(
+            data=c5,
+            kernel=3,
+            stride=2,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P6_conv_weight", init=xavier_init),
+            bias=X.var(name="P6_conv_bias", init=X.zero_init()),
+            name="P6_conv"
+        )
+        P6 = self.norm(data=P6, name="P6_conv_bn")
+
+        # P7
+        P6_relu = X.relu(data=P6, name="P6_relu")
+        P7 = X.conv(
+            data=P6_relu,
+            kernel=3,
+            stride=2,
+            filter=256,
+            no_bias=False,
+            weight=X.var(name="P7_conv_weight", init=xavier_init),
+            bias=X.var(name="P7_conv_bias", init=X.zero_init()),
+            name="P7_conv"
+        )
+        P7 = self.norm(data=P7, name="P7_conv_bn")
+
+        return p3_conv, p4_conv, p5_conv, P6, P7
