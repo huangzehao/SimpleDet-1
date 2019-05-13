@@ -1,7 +1,7 @@
 from models.retinanet.builder import RetinaNet as Detector
 from models.retinanet.builder import MSRAResNet50V1FPN as Backbone
-from models.retinanet.builder import RetinaNetNeck as Neck
-from models.retinanet.builder import RetinaNetHead as RpnHead
+from models.retinanet.builder import RetinaNetNeckWithBN as Neck
+from models.retinanet.builder import RetinaNetHeadWithBN as RpnHead
 from mxnext.complicate import normalizer_factory
 
 
@@ -9,7 +9,7 @@ def get_config(is_train):
     class General:
         log_frequency = 10
         name = __name__.rsplit("/")[-1].rsplit(".")[-1]
-        batch_image = 2 if is_train else 1
+        batch_image = 4 if is_train else 1
         fp16 = False
 
 
@@ -21,7 +21,7 @@ def get_config(is_train):
 
 
     class NormalizeParam:
-        normalizer = normalizer_factory(type="fixbn")
+        normalizer = normalizer_factory(type="syncbn", ndev=len(KvstoreParam.gpus))
 
 
     class BackboneParam:
@@ -122,13 +122,13 @@ def get_config(is_train):
 
         from_scratch = False
         random = True
-        memonger = False
-        memonger_until = "stage3_unit21_plus"
+        memonger = True
+        memonger_until = "bbox_conv4"
 
         class pretrain:
             prefix = "pretrain_model/resnet-v1-50"
             epoch = 0
-            fixed_param = ["conv0", "stage1", "gamma", "beta"]
+            fixed_param = []
 
 
     class OptimizeParam:

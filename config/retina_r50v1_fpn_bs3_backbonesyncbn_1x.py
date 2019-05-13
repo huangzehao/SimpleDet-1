@@ -9,7 +9,7 @@ def get_config(is_train):
     class General:
         log_frequency = 10
         name = __name__.rsplit("/")[-1].rsplit(".")[-1]
-        batch_image = 2 if is_train else 1
+        batch_image = 3 if is_train else 1
         fp16 = False
 
 
@@ -21,7 +21,7 @@ def get_config(is_train):
 
 
     class NormalizeParam:
-        normalizer = normalizer_factory(type="fixbn")
+        normalizer = normalizer_factory(type="syncbn", ndev=len(KvstoreParam.gpus))
 
 
     class BackboneParam:
@@ -122,13 +122,13 @@ def get_config(is_train):
 
         from_scratch = False
         random = True
-        memonger = False
-        memonger_until = "stage3_unit21_plus"
+        memonger = True
+        memonger_until = "stage4_unit3_plus"
 
         class pretrain:
             prefix = "pretrain_model/resnet-v1-50"
             epoch = 0
-            fixed_param = ["conv0", "stage1", "gamma", "beta"]
+            fixed_param = []
 
 
     class OptimizeParam:
@@ -167,7 +167,7 @@ def get_config(is_train):
             thr = 0.5
 
         class coco:
-            annotation = "data/coco/annotations/instances_minival2014.json"
+            annotation = "data/coco/annotations/instances_val2017.json"
 
     # data processing
     class NormParam:
