@@ -1,6 +1,20 @@
-## System Requirements
-- Ubuntu 16.04
-- Python >= 3.5
+## Setup with Docker
+We provide pre-built docker images for both cuda9.0 and cuda10.0.
+
+Maxwell, Pascal, Volta and Turing GPUs are supported.
+
+For nvidia-driver >= 410.48, cuda10 image is recommended.
+
+For nvidia-driver >= 384.81, cuda9 image is recommended.
+
+Aliyun beijing mirror is provided for users pulling from China.
+
+```bash
+nvidia-docker run -it -v $HOST-SIMPLEDET-DIR:$CONTAINER-WORKDIR rogerchen/simpledet:cuda9 zsh
+nvidia-docker run -it -v $HOST-SIMPLEDET-DIR:$CONTAINER-WORKDIR rogerchen/simpledet:cuda10 zsh
+nvidia-docker run -it -v $HOST-SIMPLEDET-DIR:$CONTAINER-WORKDIR registry.cn-beijing.aliyuncs.com/rogerchen/simpledet:cuda9 zsh
+nvidia-docker run -it -v $HOST-SIMPLEDET-DIR:$CONTAINER-WORKDIR registry.cn-beijing.aliyuncs.com/rogerchen/simpledet:cuda10 zsh
+```
 
 ## Setup with Singularity
 We recommend the users to adopt singualrity as the default environment manager to minimize the efforts of configuration.
@@ -33,13 +47,11 @@ Here we need to map the working directory into singularity shell, note that **sy
 sudo singularity shell --no-home --nv -s /usr/bin/zsh --bind $WORKDIR /path/to/simpledet.img
 ```
 
-## Setup with Docker
-We also provide docker image with ubuntu16.04, cuda9.0, cudnn7 and py3. Pascal and Volta architectures are supported.
-```bash
-nvidia-docker run -it -v $HOST-SIMPLEDET-DIR:$CONTAINER-WORKDIR rogerchen/simpledet /usr/bin/zsh
-```
-
 ## Setup from Scratch
+#### System Requirements
+- Ubuntu 16.04
+- Python >= 3.5
+
 #### Install CUDA, cuDNN and NCCL
 
 #### Install cocotools
@@ -57,26 +69,24 @@ sudo apt-get install -y libopenblas-dev
 ```
 
 ```bash
-# Specify simpledet directory
-export SIMPLEDET_DIR=/path/to/simpledet
-export COCOAPI_DIR = /path/to/cocoapi
-
-git clone https://github.com/apache/incubator-mxnet mxnet
-cd mxnet
-git checkout 1.3.1
-git submodule init
-git submodule update:
-echo "USE_OPENCV = 0" >> ./config.mk
-echo "USE_BLAS = openblas" >> ./config.mk
-echo "USE_CUDA = 1" >> ./config.mk
-echo "USE_CUDA_PATH = /usr/local/cuda" >> ./config.mk
-echo "USE_CUDNN = 1" >> ./config.mk
-echo "USE_NCCL = 1" >> ./config.mk
-echo "USE_DIST_KVSTORE = 1" >> ./config.mk
-cp -r $SIMPLEDET_DIR/operator_cxx/* src/operator/
-mkdir -p src/coco_api
-cp -r $COCOAPI_DIR/common src/coco_api/
-make -j
-cd python
-python3 setup.py install
+git clone --recursive https://github.com/apache/incubator-mxnet /tmp/mxnet && \
+git clone https://github.com/Tusimple/simpledet /tmp/simpledet && \
+git clone https://github.com/RogerChern/cocoapi /tmp/cocoapi && \
+cp -r /tmp/simpledet/operator_cxx/* /tmp/mxnet/src/operator && \
+mkdir -p /tmp/mxnet/src/coco_api && \
+cp -r /tmp/cocoapi/common /tmp/mxnet/src/coco_api && \
+cd /tmp/mxnet && \
+echo "USE_OPENCV = 0" >> ./config.mk && \
+echo "USE_MKLDNN = 0" >> ./config.mk && \
+echo "USE_BLAS = openblas" >> ./config.mk && \
+echo "USE_CUDA = 1" >> ./config.mk && \
+echo "USE_CUDA_PATH = /usr/local/cuda" >> ./config.mk && \
+echo "USE_CUDNN = 1" >> ./config.mk && \
+echo "USE_NCCL = 1" >> ./config.mk && \
+echo "USE_DIST_KVSTORE = 1" >> ./config.mk && \
+echo "CUDA_ARCH = -gencode arch=compute_50,code=sm_50 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_70,code=sm_70" >> ./config.mk && \
+make -j$((`nproc`-1)) && \
+cd python && \
+python3 setup.py install && \
+rm -rf /tmp/mxnet /tmp/simpledet /tmp/cocoapi
 ```
