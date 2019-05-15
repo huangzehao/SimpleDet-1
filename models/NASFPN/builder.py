@@ -8,19 +8,24 @@ from symbol.builder import Neck
 def merge_sum(f1, f2, name):
     """
     :param f1: feature 1
-    :param f2: feature 2
+    :param f2: feature 2, major feature
     :param name: name
-    :return: sum(f1, f2)
+    :return: sum(f1, f2), feature map size is the same as f2
     """
+    f1 = mx.sym.contrib.BilinearResize2D(data=f1, like=f2, mode='like', name=name + '_resize')
     return mx.sym.ElementWiseSum(f1, f2, name=name + '_sum')
 
 def merge_gp(f1, f2, name):
     """
-    :param f1: feature 1, attention feature
+    the input feature layers are adjusted to the output resolution
+    by nearest neighbor upsampling or max pooling if needed before 
+    applying the binary operation
+    :param f1: feature 1, attention feature, prefered high level feature I guess
     :param f2: feature 2, major feature
     :param name: name
-    :return: global pooling fusion of f1 and f2
+    :return: global pooling fusion of f1 and f2, feature map size is the same as f2
     """
+    f1 = mx.sym.contrib.BilinearResize2D(data=f1, like=f2, mode='like', name=name + '_resize')
     gp = mx.sym.Pooling(f1, name=name + '_gp', kernel=(1, 1), pool_type="max", global_pool=True)
     gp = mx.sym.Activation(gp, act_type='sigmoid', name=name + '_sigmoid')
     fuse_mul = mx.sym.broadcast_mul(f2, gp, name=name + '_mul')
@@ -38,7 +43,7 @@ def reluconvbn(data, num_filter, init, norm, name, prefix):
     """
     data = mx.sym.Activation(data, name=name+'_relu', act_type='relu')
     weight = mx.sym.var(name=prefix + name + "_weight", init=init)
-    bias = mx.sym.var(name=prefix + name + "_bias")
+    bias = mx.sym.var(name=prefix + name + "_bias", init=X.zero_init())
     data = mx.sym.Convolution(data, name=prefix + name, weight=weight, bias=bias, num_filter=num_filter, kernel=(3, 3), pad=(1, 1), stride=(1, 1))
     data = norm(data, name=name+'_bn')
     return data
@@ -77,64 +82,32 @@ class NASFPNNeck(Neck):
             P6_0 = p_features['S{}_P6'.format(stage-1)] # s64
             P7_0 = p_features['S{}_P7'.format(stage-1)] # s128
             # P4_1 = gp(P6_0, P4_0)
-            P6_0_to_P4 = mx.sym.UpSampling(
-                P6_0,
-                scale=4,
-                sample_type='nearest',
-                name="P6_0_to_P4",
-                num_args=1
-            )
-            P6_0_to_P4 = mx.sym.slice_like(P6_0_to_P4, P4_0)
-            P4_1 = merge_gp(P6_0_to_P4, P4_0, name="gp_P6_0_P4_0")
+            P4_1 = merge_gp(P6_0, P4_0, name="gp_P6_0_P4_0")
             P4_1 = reluconvbn(P4_1, dim_reduced, init, norm, name="P4_1", prefix=prefix)
             # P4_2 = sum(P4_0, P4_1)
             P4_2 = merge_sum(P4_0, P4_1, name="sum_P4_0_P4_1")
             P4_2 = reluconvbn(P4_2, dim_reduced, init, norm, name="P4_2", prefix=prefix)
             # P3_3 = sum(P4_2, P3_0) end node
-            P4_2_to_P3 = mx.sym.UpSampling(
-                P4_2,
-                scale=2,
-                sample_type='nearest',
-                name="P4_2_to_P3",
-                num_args=1
-            )
-            P4_2_to_P3 = mx.sym.slice_like(P4_2_to_P3, P3_0)
-            P3_3 = merge_sum(P4_2_to_P3, P3_0, name="sum_P4_2_P3_0")
+            P3_3 = merge_sum(P4_2, P3_0, name="sum_P4_2_P3_0")
             P3_3 = reluconvbn(P3_3, dim_reduced, init, norm, name="P3_3", prefix=prefix)
             P3 = P3_3
-            # P4_4 = sum(P4_2, P3_3) end node
-            P3_3_to_P4 = X.pool(P3_3, name="P3_3_to_P4", kernel=3, stride=2)
-            P3_3_to_P4 = mx.sym.slice_like(P3_3_to_P4, P4_2)
-            P4_4 = merge_sum(P4_2, P3_3_to_P4, name="sum_P4_4_P3_3")
+            # P4_4 = sum(P3_3, P4_2) end node
+            P4_4 = merge_sum(P3_3, P4_2, name="sum_P3_3_P4_2")
             P4_4 = reluconvbn(P4_4, dim_reduced, init, norm, name="P4_4", prefix=prefix)
             P4 = P4_4
             # P5_5 = sum(gp(P3_3, P4_4), P5_0) end node
-            gp_P3_3_P4_4 = merge_gp(P4_4, P3_3_to_P4, name="gp_P3_3_P4_4")
-            gp_P3_3_P4_4_to_P5 = X.pool(gp_P3_3_P4_4, kernel=3, stride=2, name="gp_P3_3_P4_4_to_P5")
-            gp_P3_3_P4_4_to_P5 = mx.sym.slice_like(gp_P3_3_P4_4_to_P5, P5_0)
-            P5_5 = merge_sum(gp_P3_3_P4_4_to_P5, P5_0, name="sum_[gp_P3_3_P4_4]_P5_0")
+            gp_P3_3_P4_4 = merge_gp(P3_3, P4_4, name="gp_P3_3_P4_4")
+            P5_5 = merge_sum(gp_P3_3_P4_4, P5_0, name="sum_[gp_P3_3_P4_4]_P5_0")
             P5_5 = reluconvbn(P5_5, dim_reduced, init, norm, name="P5_5", prefix=prefix)
             P5 = P5_5
             # P7_6 = sum(gp(P4_2, P5_5), P7_0) end node 
-            P4_2_to_P5 = X.pool(P4_2, name="P4_2_to_P5", kernel=3, stride=2)
-            P4_2_to_P5 = mx.sym.slice_like(P4_2_to_P5, P5_5)
-            gp_P4_2_P5_5 = merge_gp(P5_5, P4_2_to_P5, name="gp_P4_2_P5_5")
-            gp_P4_2_P5_5_to_P7 = X.pool(gp_P4_2_P5_5, kernel=5, stride=4, name="gp_P4_2_P5_5_to_P7")
-            gp_P4_2_P5_5_to_P7 = mx.sym.slice_like(gp_P4_2_P5_5_to_P7, P7_0)
-            P7_6 = merge_sum(gp_P4_2_P5_5_to_P7, P7_0, name="sum_[gp_P4_2_P5_5]_P7_0")
+            gp_P4_2_P5_5 = merge_gp(P4_2, P5_5, name="gp_p4_2_P5_5")
+            P7_6 = merge_sum(gp_P4_2_P5_5, P7_0, name="sum_[gp_P4_2_P5_5]_P7_0")
             P7_6 = reluconvbn(P7_6, dim_reduced, init, norm, name="P7_6", prefix=prefix)
             P7 = P7_6
             # P6_7 = gp(P7_6, P5_5) end node
-            P7_6_to_P6 = mx.sym.UpSampling(
-                P7_6,
-                scale=2,
-                sample_type='nearest',
-                name="P7_6_to_P6",
-                num_args=1                
-            )
-            P7_6_to_P6 = mx.sym.slice_like(P7_6_to_P6, P6_0)
-            P5_5_to_P6 = X.pool(P5_5, name="p5_5_to_P6", kernel=3, stride=2)
-            P5_5_to_P6 = mx.sym.slice_like(P5_5_to_P6, P6_0)
+            P7_6_to_P6 = mx.sym.contrib.BilinearResize2D(data=P7_6, like=P6_0, mode='like', name='P7_6_to_P6_0_resize')
+            P5_5_to_P6 = mx.sym.contrib.BilinearResize2D(data=P5_5, like=P6_0, mode='like', name='P5_5_to_P6_0_resize')
             P6_7 = merge_gp(P7_6_to_P6, P5_5_to_P6, name="gp_P7_6_to_P6_P5_5_to_P6")
             P6_7 = reluconvbn(P6_7, dim_reduced, init, norm, name="P6_7", prefix=prefix)
             P6 = P6_7
