@@ -104,8 +104,10 @@ class KLBboxHead(BboxHead):
             name='bbox_reg_l1'
         )
         reg_loss = bbox_weight * reg_loss
+        bbox_var_exp_copy = mx.sym.identity(bbox_var_exp, name="bbox_var_exp_copy")
+        bbox_var_exp_copy = X.block_grad(bbox_var_exp_copy, name="bbox_var_exp_copy_blockgrad")
         if p.reg_loss_scale_alpha:
-            reg_loss = reg_loss * bbox_var_exp
+            reg_loss = reg_loss * bbox_var_exp_copy
 
         reg_loss = X.loss(
             reg_loss,
@@ -158,5 +160,34 @@ class KLFPNBbox2fcHead(KLBboxHead):
         fc2 = X.relu(fc2)
 
         self._head_feat = fc2
+
+        return self._head_feat
+
+
+class KLBboxC5V1Head(KLBboxHead):
+    def __init__(self, pBbox):
+        super(KLBboxC5V1Head, self).__init__(pBbox)
+
+    def _get_bbox_head_logit(self, conv_feat):
+        if self._head_feat is not None:
+            return self._head_feat
+
+        from mxnext.backbone.resnet_v1 import Builder
+
+        unit = Builder.resnet_stage(
+            conv_feat,
+            name="stage4",
+            num_block=3,
+            filter=2048,
+            stride=1,
+            dilate=1,
+            norm_type=self.p.normalizer,
+            norm_mom=0.9,
+            ndev=8
+        )
+        unit = X.to_fp32(unit, name='c5_to_fp32')
+        pool1 = X.pool(unit, global_pool=True, name='pool1')
+
+        self._head_feat = pool1
 
         return self._head_feat
