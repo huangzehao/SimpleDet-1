@@ -3,7 +3,7 @@ from symbol.builder import ResNet50V1 as Backbone
 from symbol.builder import Neck
 from symbol.builder import RpnHead
 from symbol.builder import RoiAlign as RoiExtractor
-from models.kl_loss.builder import KLBboxC5V1Head as BboxHead
+from symbol.builder import BboxC5V1Head as BboxHead
 from mxnext.complicate import normalizer_factory
 
 
@@ -81,7 +81,6 @@ def get_config(is_train):
         num_class   = 1 + 80
         image_roi   = 512
         batch_image = General.batch_image
-        reg_loss_scale_alpha = True
 
         class regress_target:
             class_agnostic = True
@@ -260,12 +259,7 @@ def get_config(is_train):
         ["bbox_reg_loss_output", "bbox_label_blockgrad_output"],
         []
     )
-    box_var_l1_metric = metric.L1(
-        "RcnnVarL1",
-        ["bbox_var_loss_output", "bbox_label_blockgrad_output"],
-        []
-    )
-    metric_list = [rpn_acc_metric, rpn_l1_metric, box_acc_metric, box_l1_metric, box_var_l1_metric]
+    metric_list = [rpn_acc_metric, rpn_l1_metric, box_acc_metric, box_l1_metric]
 
     return General, KvstoreParam, RpnParam, RoiParam, BboxParam, DatasetParam, \
            ModelParam, OptimizeParam, TestParam, \

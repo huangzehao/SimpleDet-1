@@ -103,11 +103,10 @@ class KLBboxHead(BboxHead):
             scalar=1.0,
             name='bbox_reg_l1'
         )
+        bbox_reg_l1_block_grad = X.block_grad(reg_loss, name="bbox_reg_l1_blockgrad")
         reg_loss = bbox_weight * reg_loss
-        bbox_var_exp_copy = mx.sym.identity(bbox_var_exp, name="bbox_var_exp_copy")
-        bbox_var_exp_copy = X.block_grad(bbox_var_exp_copy, name="bbox_var_exp_copy_blockgrad")
         if p.reg_loss_scale_alpha:
-            reg_loss = reg_loss * bbox_var_exp_copy
+            reg_loss = reg_loss * X.block_grad(bbox_var_exp, name="bbox_var_exp_blockgrad")
 
         reg_loss = X.loss(
             reg_loss,
@@ -116,14 +115,7 @@ class KLBboxHead(BboxHead):
         )
 
         # bbox var loss
-        bbox_delta_copy = mx.sym.identity(bbox_delta, name="bbox_delta_copy")
-        bbox_delta_copy = X.block_grad(bbox_delta_copy, name="bbox_delta_copy_blockgrad")
-        reg_loss_copy = X.smooth_l1(
-            bbox_delta_copy - bbox_target,
-            scalar=1.0,
-            name='bbox_reg_l1_copy'
-        )
-        bbox_var_loss = (bbox_var_exp * reg_loss_copy) + (bbox_var / 2.0)
+        bbox_var_loss = (bbox_var_exp * bbox_reg_l1_block_grad) + (bbox_var / 2.0)
         bbox_var_loss = bbox_weight * bbox_var_loss
         bbox_var_loss = X.loss(
             bbox_var_loss,
