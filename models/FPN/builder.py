@@ -5,6 +5,7 @@ import mxnext as X
 
 from symbol.builder import Backbone, BboxHead, Neck, RoiAlign
 from models.FPN import assign_layer_fpn, get_top_proposal
+from operator_py import bbox_target
 
 
 class FPNBbox2fcHead(BboxHead):
@@ -26,6 +27,7 @@ class FPNBbox2fcHead(BboxHead):
         self._head_feat = fc2
 
         return self._head_feat
+
 
 
 class FPNRpnHead(object):
@@ -269,6 +271,52 @@ class FPNRpnHead(object):
 
         return bbox, label, bbox_target, bbox_weight
 
+
+class PYFPNRpnHead(FPNRpnHead):
+    def __init__(self, pRpn):
+        super(PYFPNRpnHead, self).__init__(pRpn)
+    
+    def get_sampled_proposal(self, conv_fpn_feat, gt_bbox, im_info):
+        p = self.p
+
+        batch_image = p.batch_image
+
+        proposal_wo_gt = p.subsample_proposal.proposal_wo_gt
+        image_roi = p.subsample_proposal.image_roi
+        fg_fraction = p.subsample_proposal.fg_fraction
+        fg_thr = p.subsample_proposal.fg_thr
+        bg_thr_hi = p.subsample_proposal.bg_thr_hi
+        bg_thr_lo = p.subsample_proposal.bg_thr_lo
+        post_nms_top_n = p.proposal.post_nms_top_n
+
+        num_reg_class = p.bbox_target.num_reg_class
+        class_agnostic = p.bbox_target.class_agnostic
+        bbox_target_weight = p.bbox_target.weight
+        bbox_target_mean = p.bbox_target.mean
+        bbox_target_std = p.bbox_target.std
+
+        proposal = self.get_all_proposal(conv_fpn_feat, im_info)
+
+        (bbox, label, bbox_target, bbox_weight) = mx.sym.Custom(
+            proposal=proposal,
+            gt_bbox=gt_bbox,
+            num_class=num_reg_class,
+            add_gt_to_proposal= not proposal_wo_gt,
+            image_rois=image_roi,
+            fg_fraction=fg_fraction,
+            fg_thresh=fg_thr,
+            bg_thresh_hi=bg_thr_hi,
+            bg_thresh_lo=bg_thr_lo,
+            bbox_target_std=bbox_target_std,
+            name="subsample_proposal",
+            op_type="bbox_target"
+        )
+
+        label = X.reshape(label, (-3, -2))
+        bbox_target = X.reshape(bbox_target, (-3, -2))
+        bbox_weight = X.reshape(bbox_weight, (-3, -2))
+
+        return bbox, label, bbox_target, bbox_weight
 
 class MSRAResNet50V1FPN(Backbone):
     def __init__(self, pBackbone):
