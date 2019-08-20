@@ -6,15 +6,48 @@ import mxnet as mx
 import mxnext as X
 
 from symbol.builder import RpnHead, Backbone, Neck
-from models.retinanet.builder import RetinaNetHead
+from models.retinanet.builder import RetinaNet
 
 
-class RetinaNet(object):
+class FitNetHead(object):
+    def __init__(self, pKD):
+        super().__init__()
+        self.p = pKD
+        self._student_feat = None
+    
+    def get_student_feat(self, mimic_feat, mimic_channel):
+        if self._student_feat:
+            return self._student_feat
+
+        mimic_channel = self.p.channel
+        student_hint = mx.sym.Convolution(data=mimic_feat,
+                                          num_filter=mimic_channel,
+                                          kernel=(1, 1),
+                                          stride=(1, 1),
+                                          pad=(0, 0),
+                                          name="student_hint_conv")
+        student_hint = mx.sym.Activation(data=student_hint, 
+                                         act_type='relu', 
+                                         name="student_hint_relu")
+        return student_hint
+            
+    def get_loss(self, feat_dict, label):
+        mimic_stage = self.p.stage
+        mimic_channel = self.p.channel
+        mimic_grad_scale = self.p.grad_scale
+        
+        student_feat = self.get_student_feat(feat_dict[mimic_stage], mimic_channel)
+        fit_loss = mx.sym.mean(mx.sym.square(student_feat - label))
+        fit_loss = mx.sym.MakeLoss(fit_loss, grad_scale=mimic_grad_scale, name="fit_loss")
+        return fit_loss
+        
+        
+class FitNetRetinaNet(RetinaNet):
     def __init__(self):
-        pass
+        super().__init__()
 
     @staticmethod
-    def get_train_symbol(backbone, neck, head, FitParam):
+    def get_train_symbol(backbone, neck, head, kd_head):
         rpn_cls_label = X.var("rpn_cls_label")
         rpn_reg_target = X.var("rpn_reg_target")
         rpn_reg_weight = X.var("rpn_reg_weight")
@@ -29,29 +62,6 @@ class RetinaNet(object):
         feat = neck.get_rpn_feature(feat)
 
         loss = head.get_loss(feat, rpn_cls_label, rpn_reg_target, rpn_reg_weight)
+        kd_loss = kd_head.get_loss(feat_dict, teacher_label)
 
-        mimic_feat = feat_dict[FitParam.mimic_stage]
-        mimic_channel = FitParam.mimic_channel
-        mimic_grad_scale = FitParam.mimic_grad_scale
-
-        student_hint = mx.sym.Convolution(data=mimic_feat, num_filter=mimic_channel, kernel=(1, 1), stride=(1, 1), pad=(0, 0), name="student_hint_conv")
-        student_hint = mx.sym.Activation(data=student_hint, act_type='relu', name="student_hint_relu")
-        fit_loss = mx.sym.mean(mx.sym.square(student_hint - teacher_label))
-        fit_loss = mx.sym.MakeLoss(fit_loss, grad_scale=mimic_grad_scale)
-
-        return X.group(loss + (fit_loss, ))
-
-    @staticmethod
-    def get_test_symbol(backbone, neck, head):
-        im_info = X.var("im_info")
-        im_id = X.var("im_id")
-        rec_id = X.var("rec_id")
-
-        feat = backbone.get_rpn_feature()
-        feat = neck.get_rpn_feature(feat)
-
-        cls_score, bbox_xyxy = head.get_prediction(feat, im_info)
-
-        return X.group([rec_id, im_id, im_info, cls_score, bbox_xyxy])
-
-
+        return X.group(loss + (kd_loss, ))

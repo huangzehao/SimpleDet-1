@@ -80,7 +80,8 @@ class KDDetModule(DetModule):
     def __init__(self, symbol, teacher_module=None, teacher_label_names=None, teacher_label_shapes=None,
                  data_names=None, label_names=None, logger=logging, context=ctx.cpu(),
                  fixed_param=None, excluded_param=None):
-        super().__init__(symbol=symbol, data_names=data_names, label_names=label_names + teacher_label_names, logger=logger, context=context,
+        super().__init__(symbol=symbol, data_names=data_names, 
+                         label_names=label_names + teacher_label_names, logger=logger, context=context,
                          fixed_param=fixed_param, excluded_param=excluded_param)
         
         assert isinstance(teacher_module, DetModule)
@@ -139,8 +140,8 @@ class KDDetModule(DetModule):
             else:
                 new_lshape = None
 
-            self.teacher_module.reshape(new_dshape[:1], None)
             # TODO: hard code
+            self.teacher_module.reshape(new_dshape[:1], None)
             t_data_batch = DataBatch(data=data_batch.data[:1], 
                                      provide_data=data_batch.provide_data[:1])
             self.teacher_module.forward(data_batch=t_data_batch, is_train=True)
@@ -233,8 +234,13 @@ class KDDetModule(DetModule):
             and the value is the row id of the param to pull.
         """
         assert num_epoch is not None, 'please specify number of epochs'
-        self.bind(data_shapes=train_data.provide_data, label_shapes=train_data.provide_label + self.teacher_label_shapes,
+
+        self.bind(data_shapes=train_data.provide_data, 
+                  label_shapes=train_data.provide_label + self.teacher_label_shapes,
                   for_training=True, force_rebind=force_rebind)
+
+        self.logger.info("MEM usage: {} MiB".
+            format(int(self._exec_group.execs[0].debug_str().split('\n')[-3].split()[1])))
 
         if monitor is not None:
             self.install_monitor(monitor)
@@ -251,6 +257,7 @@ class KDDetModule(DetModule):
         ################################################################################
         # training loop
         ################################################################################
+        total_iter = 0
         for epoch in range(begin_epoch, num_epoch):
             tic = time.time()
             eval_metric.reset()
@@ -259,6 +266,11 @@ class KDDetModule(DetModule):
             end_of_batch = False
             next_data_batch = next(data_iter)
             while not end_of_batch:
+                if profile is True and epoch == begin_epoch and nbatch == 1:
+                    self.logger.info("Profiling begins")
+                    import mxnet as mx
+                    mx.profiler.set_state("run")
+
                 data_batch = next_data_batch
                 if monitor is not None:
                     monitor.tic()
@@ -292,10 +304,11 @@ class KDDetModule(DetModule):
                     for callback in _as_list(batch_end_callback):
                         callback(batch_end_params)
                 nbatch += 1
+                total_iter += 1
 
-                if profile is True and nbatch == 10:
+                if profile is True and epoch == begin_epoch and nbatch == 10:
                     self.logger.info("Profiling ends")
-                    import mxnet as mx
+                    mx.profiler.set_state("stop")
                     mx.profiler.dump()
 
             # one epoch of training is finished
