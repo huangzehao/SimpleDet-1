@@ -156,6 +156,7 @@ class KDDetModule(DetModule):
             self.teacher_module.forward(data_batch=t_data_batch, is_train=True)
             self.t_output = self.teacher_module.get_outputs()
         data_batch.label += self.t_output
+        self.t_output = None
 
         self._exec_group.forward(data_batch, is_train)
 
