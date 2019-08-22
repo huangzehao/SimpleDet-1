@@ -24,7 +24,7 @@ import time
 import logging
 import warnings
 
-import mxnet
+import mxnet as mx
 
 from mxnet import metric
 from mxnet import context as ctx
@@ -155,6 +155,8 @@ class KDDetModule(DetModule):
                                     provide_data=data_batch.provide_data[:1])
             self.teacher_module.forward(data_batch=t_data_batch, is_train=True)
             self.t_output = self.teacher_module.get_outputs()
+        for data in self.t_output:
+            data.wait_to_read()
         data_batch.label += self.t_output
         self.t_output = None
 
